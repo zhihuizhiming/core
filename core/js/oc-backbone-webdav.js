@@ -142,8 +142,8 @@
 			var changedProp = davProperties[key];
 			var value = attrs[key];
 			if (!changedProp) {
-				console.warn('No matching DAV property for property "' + key);
-				changedProp = key;
+				// no matching DAV property for property, skip
+				continue;
 			}
 			if (_.isBoolean(value) || _.isNumber(value)) {
 				// convert to string
@@ -179,10 +179,10 @@
 		});
 	}
 
-	function callPropPatch(client, options, model, headers) {
+	function callPropPatch(client, options, model, headers, changed) {
 		return client.propPatch(
 			options.url,
-			convertModelAttributesToDavProperties(model.changed, options.davProperties),
+			convertModelAttributesToDavProperties(changed || model.changed, options.davProperties),
 			headers
 		).then(function(result) {
 			if (isSuccessStatus(result.status)) {
@@ -213,7 +213,7 @@
 				return;
 			}
 
-			callPropPatch(client, options, model, headers);
+			callPropPatch(client, options, model, headers, model.attributes);
 		});
 	}
 
@@ -288,16 +288,14 @@
 		var params = {type: methodMap[method] || method};
 		var isCollection = (model instanceof Backbone.Collection);
 
-		if (method === 'update') {
-			// if a model has an inner collection, it must define an
-			// attribute "hasInnerCollection" that evaluates to true
-			if (model.hasInnerCollection) {
-				// if the model itself is a Webdav collection, use MKCOL
-				params.type = 'MKCOL';
-			} else if (model.usePUT || (model.collection && model.collection.usePUT)) {
-				// use PUT instead of PROPPATCH
-				params.type = 'PUT';
-			}
+		// if a model has an inner collection, it must define an
+		// attribute "hasInnerCollection" that evaluates to true
+		if (method === 'create' && model.hasInnerCollection) {
+			params.type = 'MKCOL';
+		}
+		if (method === 'update' && (model.usePUT || (model.collection && model.collection.usePUT))) {
+			// use PUT instead of PROPPATCH
+			params.type = 'PUT';
 		}
 
 		// Ensure that we have a URL.
@@ -315,7 +313,7 @@
 			params.processData = false;
 		}
 
-		if (params.type === 'PROPFIND' || params.type === 'PROPPATCH') {
+		if (params.type === 'PROPFIND' || params.type === 'PROPPATCH' || params.type === 'MKCOL') {
 			var davProperties = model.davProperties;
 			if (!davProperties && model.model) {
 				// use dav properties from model in case of collection

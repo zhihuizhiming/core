@@ -287,15 +287,35 @@
 	function davSync(method, model, options) {
 		var params = {type: methodMap[method] || method};
 		var isCollection = (model instanceof Backbone.Collection);
+		//var isWebdavCollection = (model.get('resourceType').indexOf('{DAV:}collection') >= 0);
+		var isWebdavCollection = !!model.hasInnerCollection;
 
-		// if a model has an inner collection, it must define an
-		// attribute "hasInnerCollection" that evaluates to true
-		if (method === 'create' && model.hasInnerCollection) {
-			params.type = 'MKCOL';
-		}
-		if (method === 'update' && (model.usePUT || (model.collection && model.collection.usePUT))) {
-			// use PUT instead of PROPPATCH
-			params.type = 'PUT';
+		// need to override default behavior and decide what to do
+		if (method === 'create') {
+			if (isWebdavCollection) {
+				if (!_.isUndefined(model.id)) {
+					// create new collection with known id
+					params.type = 'MKCOL';
+				} else {
+					// unsupported
+					throw 'Cannot create Webdav collection without id';
+				}
+			} else {
+				if (!_.isUndefined(model.id)) {
+					// need to create it first
+					params.type = 'PUT';
+				} else {
+					// creating without known id, will receive it after creation
+					params.type = 'POST';
+				}
+			}
+		} else if (method === 'update') {
+			// it exists, only update properties
+			params.type = 'PROPPATCH';
+			// force PUT usage ?
+			if (model.usePUT || (model.collection && model.collection.usePUT)) {
+				params.type = 'PUT';
+			}
 		}
 
 		// Ensure that we have a URL.
@@ -354,9 +374,99 @@
 		return xhr;
 	}
 
+
+	/**
+	 * Regular Webdav leaf node
+	 */
+	var WebdavNode = Backbone.Model.extend({
+		sync: davSync,
+
+		constructor: function() {
+			this.on('sync', this._onSync, this);
+			this._isNew = true;
+			Backbone.Model.prototype.constructor.apply(this, arguments);
+		},
+
+		_onSync: function() {
+			this._isNew = false;
+		},
+
+		isNew: function() {
+			// we can't rely on the id so use a dummy attribute
+			return !!this._isNew;
+		}
+	});
+
+	/**
+	 * Children collection for a Webdav collection node
+	 */
+	var WebdavChildrenCollection = Backbone.Collection.extend({
+		sync: davSync,
+
+		collectionNode: null,
+
+		constructor: function() {
+			this.on('sync', this._onSync, this);
+			Backbone.Collection.prototype.constructor.apply(this, arguments);
+		},
+
+		initialize: function(models, options) {
+			options = options || {};
+
+			this.collectionNode = options.collectionNode;
+
+			return Backbone.Collection.prototype.initialize.apply(this, arguments);
+		},
+
+		_onSync: function(model) {
+			if (model instanceof Backbone.Model) {
+				// since we saved, mark as non-new
+				if (!_.isUndefined(model._isNew)) {
+					model._isNew = false;
+				}
+			} else {
+				// since we fetched, mark models as non-new
+				model.each(function(model) {
+					if (!_.isUndefined(model._isNew)) {
+						model._isNew = false;
+					}
+				});
+			}
+		},
+
+		url: function() {
+			return this.collectionNode.url();
+		}
+	});
+
+	/**
+	 * Webdav collection which is a special node, represented by a backbone model
+	 * and a sub-collection for its children.
+	 */
+	var WebdavCollectionNode = WebdavNode.extend({
+		sync: davSync,
+
+		hasInnerCollection: true,
+
+		childrenCollectionClass: WebdavChildrenCollection,
+
+		_childrenCollection: null,
+
+		getChildrenCollection: function() {
+			if (!this._childrenCollection) {
+				this._childrenCollection = new this.childrenCollectionClass([], {collectionNode: this});
+			}
+			return this._childrenCollection;
+		}
+	});
+
 	// exports
 	Backbone.davCall = davCall;
 	Backbone.davSync = davSync;
+
+	Backbone.WebdavNode = WebdavNode;
+	Backbone.WebdavChildrenCollection = WebdavChildrenCollection;
+	Backbone.WebdavCollectionNode = WebdavCollectionNode;
 
 })(OC.Backbone);
 

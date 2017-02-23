@@ -54,6 +54,8 @@ $OCC config:system:set skeletondirectory --value="$(pwd)/skeleton"
 $OCC app:enable files_external
 
 mkdir -p work/local_storage || { echo "Unable to create work folder" >&2; exit 1; }
+sh -c "echo 'File located in local storage' >> work/local_storage/file_in_external_storage.txt" || { echo "Unable to create file" >&2; exit 1; }
+
 OUTPUT_CREATE_STORAGE=`$OCC files_external:create local_storage local null::null -c datadir=./build/integration/work/local_storage` 
 
 ID_STORAGE=`echo $OUTPUT_CREATE_STORAGE | awk {'print $5'}`

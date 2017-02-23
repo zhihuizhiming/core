@@ -88,10 +88,15 @@ class AccountMapper extends Mapper {
 		}
 
 		$result = $qb->execute();
-		$data = $result->fetchAll(\PDO::FETCH_GROUP);
+		$data = $result->fetchAll();
 		$result->closeCursor();
 
-		return array_map(function($d){return $d[0]['count'];}, $data);
+		$return = [];
+		foreach ($data as $d) {
+			$return[$d['backend']] = $d['count'];
+		}
+
+		return $return;
 	}
 
 	public function getUserCount($hasLoggedIn) {

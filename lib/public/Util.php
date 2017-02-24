@@ -708,7 +708,7 @@ class Util {
 	 * Collects all status infos.
 	 *
 	 * @return array
-	 * 
+	 * @since 10.0
 	 */
 	public static function getStatusInfo() {
 		$systemConfig = \OC::$server->getSystemConfig();
